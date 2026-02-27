@@ -1,6 +1,10 @@
 # Opencode Quota
 
-Monitor quota and tokens for OpenCode providers via Toasts and Commands. Zero LLM calls, zero context pollution.
+Track OpenCode quota & tokens via Toasts/Commands with zero context window pollution. 
+
+**Quota provider supports**: GitHub Copilot, OpenAl (Plus/Pro), Qwen Code, Chutes Al, Firmware Al, Google Antigravity, and Z.ai coding plan. 
+
+**Token provider supports**: All models and providers in [models.dev](https://models.dev)
 
 ## What It Does
 
@@ -345,3 +349,6 @@ After configuration, instruct the user to:
 ## License
 
 MIT
+
+## Remarks
+Opencode Quota is not built by the OpenCode team and is not affiliated with them in any way. It is not affiliated with any providers listed above.

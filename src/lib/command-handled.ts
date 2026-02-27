@@ -14,3 +14,10 @@ export const COMMAND_HANDLED_SENTINEL = "__QUOTA_COMMAND_HANDLED__" as const;
 export function handled(): never {
   throw new Error(COMMAND_HANDLED_SENTINEL);
 }
+
+/**
+ * Returns true when an error is the command-handled sentinel.
+ */
+export function isCommandHandledError(err: unknown): boolean {
+  return err instanceof Error && err.message === COMMAND_HANDLED_SENTINEL;
+}

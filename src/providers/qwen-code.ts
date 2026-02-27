@@ -1,8 +1,11 @@
 import type { QuotaProvider, QuotaProviderContext, QuotaProviderResult } from "../lib/entries.js";
 import { computeQwenQuota, readQwenLocalQuotaState } from "../lib/qwen-local-quota.js";
 import { readAuthFileCached } from "../lib/opencode-auth.js";
-
-const QWEN_AUTH_CACHE_MAX_AGE_MS = 5_000;
+import {
+  DEFAULT_QWEN_AUTH_CACHE_MAX_AGE_MS,
+  hasQwenOAuthAuth,
+  isQwenCodeModelId,
+} from "../lib/qwen-auth.js";
 
 type GroupedToastEntry = {
   name: string;
@@ -13,30 +16,20 @@ type GroupedToastEntry = {
   right?: string;
 };
 
-function hasQwenOAuthAuth(auth: Awaited<ReturnType<typeof readAuthFileCached>>): boolean {
-  const qwen = auth?.["opencode-qwencode-auth"];
-  return (
-    !!qwen &&
-    qwen.type === "oauth" &&
-    typeof qwen.access === "string" &&
-    qwen.access.trim().length > 0
-  );
-}
-
 export const qwenCodeProvider: QuotaProvider = {
   id: "qwen-code",
 
   async isAvailable(_ctx: QuotaProviderContext): Promise<boolean> {
-    const auth = await readAuthFileCached({ maxAgeMs: QWEN_AUTH_CACHE_MAX_AGE_MS });
+    const auth = await readAuthFileCached({ maxAgeMs: DEFAULT_QWEN_AUTH_CACHE_MAX_AGE_MS });
     return hasQwenOAuthAuth(auth);
   },
 
   matchesCurrentModel(model: string): boolean {
-    return model.toLowerCase().startsWith("qwen-code/");
+    return isQwenCodeModelId(model);
   },
 
   async fetch(ctx: QuotaProviderContext): Promise<QuotaProviderResult> {
-    const auth = await readAuthFileCached({ maxAgeMs: QWEN_AUTH_CACHE_MAX_AGE_MS });
+    const auth = await readAuthFileCached({ maxAgeMs: DEFAULT_QWEN_AUTH_CACHE_MAX_AGE_MS });
     if (!hasQwenOAuthAuth(auth)) {
       return { attempted: false, entries: [], errors: [] };
     }

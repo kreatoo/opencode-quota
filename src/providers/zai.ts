@@ -6,19 +6,18 @@
 
 import type { QuotaProvider, QuotaProviderContext, QuotaProviderResult } from "../lib/entries.js";
 import { queryZaiQuota } from "../lib/zai.js";
+import { isAnyProviderIdAvailable } from "../lib/provider-availability.js";
 
 export const zaiProvider: QuotaProvider = {
   id: "zai",
 
   async isAvailable(ctx: QuotaProviderContext): Promise<boolean> {
-    try {
-      const resp = await ctx.client.config.providers();
-      const ids = new Set((resp.data?.providers ?? []).map((p) => p.id));
-      // Z.ai models typically use "zai" or "glm" provider ids
-      return ids.has("zai") || ids.has("glm") || ids.has("zai-coding-plan");
-    } catch {
-      return false;
-    }
+    return isAnyProviderIdAvailable({
+      ctx,
+      // Z.ai models typically use "zai" or "glm" provider ids.
+      candidateIds: ["zai", "glm", "zai-coding-plan"],
+      fallbackOnError: false,
+    });
   },
 
   matchesCurrentModel(model: string): boolean {

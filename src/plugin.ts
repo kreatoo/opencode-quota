@@ -28,7 +28,7 @@ import { fetchSessionTokensForDisplay } from "./lib/session-tokens.js";
 import { formatQuotaStatsReport } from "./lib/quota-stats-format.js";
 import { buildQuotaStatusReport, type SessionTokenError } from "./lib/quota-status.js";
 import { refreshGoogleTokensForAllAccounts } from "./lib/google.js";
-import { readAuthFileCached } from "./lib/opencode-auth.js";
+import { hasQwenOAuthAuthCached, isQwenCodeModelId } from "./lib/qwen-auth.js";
 import { recordQwenCompletion } from "./lib/qwen-local-quota.js";
 import {
   parseOptionalJsonArgs,
@@ -38,7 +38,7 @@ import {
   formatYmd,
   type Ymd,
 } from "./lib/command-parsing.js";
-import { handled } from "./lib/command-handled.js";
+import { handled, isCommandHandledError } from "./lib/command-handled.js";
 
 // =============================================================================
 // Types
@@ -259,7 +259,6 @@ function isTokenReportCommand(cmd: string): cmd is TokenReportCommandId {
  */
 export const QuotaToastPlugin: Plugin = async ({ client }) => {
   const typedClient = client as unknown as OpencodeClient;
-  const QWEN_AUTH_CACHE_MAX_AGE_MS = 5_000;
   const TOOL_FAILURE_STATUSES = new Set(["error", "failed", "failure", "cancelled", "canceled"]);
   const TOOL_SUCCESS_STATUSES = new Set(["success", "ok", "completed", "complete"]);
 
@@ -329,21 +328,6 @@ export const QuotaToastPlugin: Plugin = async ({ client }) => {
   };
 
   const providerFetchCache = new Map<string, ProviderFetchCacheEntry>();
-
-  function isQwenModel(model?: string): boolean {
-    return typeof model === "string" && model.toLowerCase().startsWith("qwen-code/");
-  }
-
-  async function hasQwenOAuthAuth(): Promise<boolean> {
-    const auth = await readAuthFileCached({ maxAgeMs: QWEN_AUTH_CACHE_MAX_AGE_MS });
-    const qwen = auth?.["opencode-qwencode-auth"];
-    return (
-      !!qwen &&
-      qwen.type === "oauth" &&
-      typeof qwen.access === "string" &&
-      qwen.access.trim().length > 0
-    );
-  }
 
   function asRecord(value: unknown): Record<string, unknown> | null {
     return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
@@ -452,9 +436,9 @@ export const QuotaToastPlugin: Plugin = async ({ client }) => {
     if (config.enabledProviders !== "auto" && !config.enabledProviders.includes("qwen-code")) return false;
 
     const currentModel = await getCurrentModel(sessionID);
-    if (!isQwenModel(currentModel)) return false;
+    if (!isQwenCodeModelId(currentModel)) return false;
 
-    return await hasQwenOAuthAuth();
+    return await hasQwenOAuthAuthCached();
   }
 
   async function refreshConfig(): Promise<void> {
@@ -1026,177 +1010,181 @@ export const QuotaToastPlugin: Plugin = async ({ client }) => {
     },
 
     "command.execute.before": async (input: CommandExecuteInput) => {
-      const cmd = input.command;
-      const sessionID = input.sessionID;
+      try {
+        const cmd = input.command;
+        const sessionID = input.sessionID;
 
-      if (cmd === "quota") {
-        // Separate cache for /quota so it doesn't pollute the toast cache.
-        let quotaCache = (globalThis as any).__opencodeQuotaCommandCache as
-          | { message: string; timestamp: number; inFlight?: Promise<string | null> }
-          | undefined;
-        if (!quotaCache) {
-          quotaCache = { message: "", timestamp: 0 };
-          (globalThis as any).__opencodeQuotaCommandCache = quotaCache;
-        }
-
-        const now = Date.now();
-        const cached =
-          quotaCache.timestamp && now - quotaCache.timestamp < config.minIntervalMs
-            ? quotaCache.message
-            : null;
-
-        const msg = cached
-          ? cached
-          : await (quotaCache.inFlight ??
-              (quotaCache.inFlight = (async () => {
-                try {
-                  return await fetchQuotaCommandMessage("command:/quota", sessionID);
-                } finally {
-                  quotaCache!.inFlight = undefined;
-                }
-              })()));
-
-        if (msg) {
-          quotaCache.message = msg;
-          quotaCache.timestamp = Date.now();
-        }
-
-        if (!msg) {
-          // Provide an actionable message instead of a generic "unavailable".
-          if (!configLoaded) {
-            await injectRawOutput(sessionID, "Quota unavailable (config not loaded, try again)");
-          } else if (!config.enabled) {
-            await injectRawOutput(sessionID, "Quota disabled in config (enabled: false)");
-          } else {
-            // Check what providers are available for a more specific hint.
-            const allProvs = getProviders();
-            const ctx = {
-              client: typedClient,
-              config: { googleModels: config.googleModels },
-            };
-            const avail = await Promise.all(
-              allProvs.map(async (p) => {
-                try {
-                  return { id: p.id, ok: await p.isAvailable(ctx) };
-                } catch {
-                  return { id: p.id, ok: false };
-                }
-              }),
-            );
-            const availableIds = avail.filter((x) => x.ok).map((x) => x.id);
-
-            if (availableIds.length === 0) {
-              await injectRawOutput(
-                sessionID,
-                "Quota unavailable\n\nNo quota providers detected. Make sure you are logged in to a supported provider (Copilot, OpenAI, etc.).\n\nRun /quota_status for diagnostics.",
-              );
-            } else {
-              await injectRawOutput(
-                sessionID,
-                `Quota unavailable\n\nProviders detected (${availableIds.join(", ")}) but returned no data. This may be a temporary API error.\n\nRun /quota_status for diagnostics.`,
-              );
-            }
+        if (cmd === "quota") {
+          // Separate cache for /quota so it doesn't pollute the toast cache.
+          let quotaCache = (globalThis as any).__opencodeQuotaCommandCache as
+            | { message: string; timestamp: number; inFlight?: Promise<string | null> }
+            | undefined;
+          if (!quotaCache) {
+            quotaCache = { message: "", timestamp: 0 };
+            (globalThis as any).__opencodeQuotaCommandCache = quotaCache;
           }
+
+          const now = Date.now();
+          const cached =
+            quotaCache.timestamp && now - quotaCache.timestamp < config.minIntervalMs
+              ? quotaCache.message
+              : null;
+
+          const msg = cached
+            ? cached
+            : await (quotaCache.inFlight ??
+                (quotaCache.inFlight = (async () => {
+                  try {
+                    return await fetchQuotaCommandMessage("command:/quota", sessionID);
+                  } finally {
+                    quotaCache!.inFlight = undefined;
+                  }
+                })()));
+
+          if (msg) {
+            quotaCache.message = msg;
+            quotaCache.timestamp = Date.now();
+          }
+
+          if (!msg) {
+            // Provide an actionable message instead of a generic "unavailable".
+            if (!configLoaded) {
+              await injectRawOutput(sessionID, "Quota unavailable (config not loaded, try again)");
+            } else if (!config.enabled) {
+              await injectRawOutput(sessionID, "Quota disabled in config (enabled: false)");
+            } else {
+              // Check what providers are available for a more specific hint.
+              const allProvs = getProviders();
+              const ctx = {
+                client: typedClient,
+                config: { googleModels: config.googleModels },
+              };
+              const avail = await Promise.all(
+                allProvs.map(async (p) => {
+                  try {
+                    return { id: p.id, ok: await p.isAvailable(ctx) };
+                  } catch {
+                    return { id: p.id, ok: false };
+                  }
+                }),
+              );
+              const availableIds = avail.filter((x) => x.ok).map((x) => x.id);
+
+              if (availableIds.length === 0) {
+                await injectRawOutput(
+                  sessionID,
+                  "Quota unavailable\n\nNo quota providers detected. Make sure you are logged in to a supported provider (Copilot, OpenAI, etc.).\n\nRun /quota_status for diagnostics.",
+                );
+              } else {
+                await injectRawOutput(
+                  sessionID,
+                  `Quota unavailable\n\nProviders detected (${availableIds.join(", ")}) but returned no data. This may be a temporary API error.\n\nRun /quota_status for diagnostics.`,
+                );
+              }
+            }
+            handled();
+          }
+
+          await injectRawOutput(sessionID, msg);
           handled();
         }
 
-        await injectRawOutput(sessionID, msg);
-        handled();
-      }
+        const untilMs = Date.now();
 
-      const untilMs = Date.now();
+        // Handle token report commands (/tokens_*)
+        if (isTokenReportCommand(cmd)) {
+          const spec = TOKEN_REPORT_COMMANDS_BY_ID.get(cmd)!;
 
-      // Handle token report commands (/tokens_*)
-      if (isTokenReportCommand(cmd)) {
-        const spec = TOKEN_REPORT_COMMANDS_BY_ID.get(cmd)!;
-
-        if (spec.kind === "between") {
-          // Special handling for date range command
-          const parsed = parseQuotaBetweenArgs(input.arguments);
-          if (!parsed.ok) {
-            await injectRawOutput(
+          if (spec.kind === "between") {
+            // Special handling for date range command
+            const parsed = parseQuotaBetweenArgs(input.arguments);
+            if (!parsed.ok) {
+              await injectRawOutput(
+                sessionID,
+                `Invalid arguments for /${spec.id}\n\n${parsed.error}\n\nExpected: /${spec.id} YYYY-MM-DD YYYY-MM-DD\nExample: /${spec.id} 2026-01-01 2026-01-15`,
+              );
+              handled();
+            }
+            const sinceMs = startOfLocalDayMs(parsed.startYmd);
+            const rangeUntilMs = startOfNextLocalDayMs(parsed.endYmd); // Exclusive upper bound for inclusive end date
+            const out = await buildQuotaReport({
+              title: spec.titleForRange(parsed.startYmd, parsed.endYmd),
+              sinceMs,
+              untilMs: rangeUntilMs,
               sessionID,
-              `Invalid arguments for /${spec.id}\n\n${parsed.error}\n\nExpected: /${spec.id} YYYY-MM-DD YYYY-MM-DD\nExample: /${spec.id} 2026-01-01 2026-01-15`,
-            );
+            });
+            await injectRawOutput(sessionID, out);
             handled();
           }
-          const sinceMs = startOfLocalDayMs(parsed.startYmd);
-          const rangeUntilMs = startOfNextLocalDayMs(parsed.endYmd); // Exclusive upper bound for inclusive end date
+
+          // Non-between token report commands
+          let sinceMs: number | undefined;
+          let filterSessionID: string | undefined;
+          let sessionOnly: boolean | undefined;
+          let topModels: number | undefined;
+          let topSessions: number | undefined;
+
+          switch (spec.kind) {
+            case "rolling":
+              sinceMs = untilMs - spec.windowMs!;
+              break;
+            case "today": {
+              const now = new Date();
+              const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+              sinceMs = startOfDay.getTime();
+              break;
+            }
+            case "session":
+              filterSessionID = sessionID;
+              sessionOnly = true;
+              break;
+            case "all":
+              topModels = spec.topModels;
+              topSessions = spec.topSessions;
+              break;
+          }
+
           const out = await buildQuotaReport({
-            title: spec.titleForRange(parsed.startYmd, parsed.endYmd),
+            title: spec.title,
             sinceMs,
-            untilMs: rangeUntilMs,
+            untilMs: spec.kind === "rolling" || spec.kind === "today" ? untilMs : undefined,
             sessionID,
+            filterSessionID,
+            sessionOnly,
+            topModels,
+            topSessions,
           });
           await injectRawOutput(sessionID, out);
           handled();
         }
 
-        // Non-between token report commands
-        let sinceMs: number | undefined;
-        let filterSessionID: string | undefined;
-        let sessionOnly: boolean | undefined;
-        let topModels: number | undefined;
-        let topSessions: number | undefined;
-
-        switch (spec.kind) {
-          case "rolling":
-            sinceMs = untilMs - spec.windowMs!;
-            break;
-          case "today": {
-            const now = new Date();
-            const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-            sinceMs = startOfDay.getTime();
-            break;
+        // Handle /quota_status (diagnostics - not a token report)
+        if (cmd === "quota_status") {
+          const parsed = parseOptionalJsonArgs(input.arguments);
+          if (!parsed.ok) {
+            await injectRawOutput(
+              sessionID,
+              `Invalid arguments for /quota_status\n\n${parsed.error}\n\nExample:\n/quota_status {"refreshGoogleTokens": true}`,
+            );
+            handled();
           }
-          case "session":
-            filterSessionID = sessionID;
-            sessionOnly = true;
-            break;
-          case "all":
-            topModels = spec.topModels;
-            topSessions = spec.topSessions;
-            break;
-        }
 
-        const out = await buildQuotaReport({
-          title: spec.title,
-          sinceMs,
-          untilMs: spec.kind === "rolling" || spec.kind === "today" ? untilMs : undefined,
-          sessionID,
-          filterSessionID,
-          sessionOnly,
-          topModels,
-          topSessions,
-        });
-        await injectRawOutput(sessionID, out);
-        handled();
-      }
-
-      // Handle /quota_status (diagnostics - not a token report)
-      if (cmd === "quota_status") {
-        const parsed = parseOptionalJsonArgs(input.arguments);
-        if (!parsed.ok) {
-          await injectRawOutput(
+          const out = await buildStatusReport({
+            refreshGoogleTokens: parsed.value["refreshGoogleTokens"] === true,
+            skewMs:
+              typeof parsed.value["skewMs"] === "number"
+                ? (parsed.value["skewMs"] as number)
+                : undefined,
+            force: parsed.value["force"] === true,
             sessionID,
-            `Invalid arguments for /quota_status\n\n${parsed.error}\n\nExample:\n/quota_status {"refreshGoogleTokens": true}`,
-          );
+          });
+          await injectRawOutput(sessionID, out);
           handled();
         }
-
-        const out = await buildStatusReport({
-          refreshGoogleTokens: parsed.value["refreshGoogleTokens"] === true,
-          skewMs:
-            typeof parsed.value["skewMs"] === "number"
-              ? (parsed.value["skewMs"] as number)
-              : undefined,
-          force: parsed.value["force"] === true,
-          sessionID,
-        });
-        await injectRawOutput(sessionID, out);
-        handled();
+      } catch (err) {
+        if (isCommandHandledError(err)) return;
+        throw err;
       }
-
     },
 
     tool: {
@@ -1258,7 +1246,7 @@ export const QuotaToastPlugin: Plugin = async ({ client }) => {
 
       if (isSuccessfulQuestionExecution(output)) {
         const model = await getCurrentModel(input.sessionID);
-        if (isQwenModel(model) && (await hasQwenOAuthAuth())) {
+        if (isQwenCodeModelId(model) && (await hasQwenOAuthAuthCached())) {
           try {
             await recordQwenCompletion();
           } catch (err) {

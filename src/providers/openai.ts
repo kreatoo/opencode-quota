@@ -4,6 +4,7 @@
 
 import type { QuotaProvider, QuotaProviderContext, QuotaProviderResult } from "../lib/entries.js";
 import { queryOpenAIQuota } from "../lib/openai.js";
+import { isAnyProviderIdAvailable } from "../lib/provider-availability.js";
 
 type GroupedToastEntry = {
   name: string;
@@ -18,15 +19,12 @@ export const openaiProvider: QuotaProvider = {
   id: "openai",
 
   async isAvailable(ctx: QuotaProviderContext): Promise<boolean> {
-    // Best-effort: if OpenCode exposes an openai provider, prefer that.
-    // Otherwise, this provider will still work if auth.json has openai oauth.
-    try {
-      const resp = await ctx.client.config.providers();
-      const ids = new Set((resp.data?.providers ?? []).map((p) => p.id));
-      return ids.has("openai") || ids.has("chatgpt") || ids.has("codex") || ids.has("opencode");
-    } catch {
-      return true;
-    }
+    // Best-effort: if provider lookup errors, preserve current permissive fallback.
+    return isAnyProviderIdAvailable({
+      ctx,
+      candidateIds: ["openai", "chatgpt", "codex", "opencode"],
+      fallbackOnError: true,
+    });
   },
 
   matchesCurrentModel(model: string): boolean {

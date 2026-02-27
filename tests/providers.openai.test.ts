@@ -51,4 +51,37 @@ describe("openai provider", () => {
     const out = await openaiProvider.fetch({} as any);
     expectAttemptedWithErrorLabel(out, "OpenAI");
   });
+
+  it("is available when provider ids include openai/chatgpt/codex/opencode", async () => {
+    const makeCtx = (ids: string[]) =>
+      ({
+        client: {
+          config: {
+            providers: vi.fn().mockResolvedValue({ data: { providers: ids.map((id) => ({ id })) } }),
+            get: vi.fn(),
+          },
+        },
+        config: { googleModels: [] },
+      }) as any;
+
+    await expect(openaiProvider.isAvailable(makeCtx(["openai"]))).resolves.toBe(true);
+    await expect(openaiProvider.isAvailable(makeCtx(["chatgpt"]))).resolves.toBe(true);
+    await expect(openaiProvider.isAvailable(makeCtx(["codex"]))).resolves.toBe(true);
+    await expect(openaiProvider.isAvailable(makeCtx(["opencode"]))).resolves.toBe(true);
+    await expect(openaiProvider.isAvailable(makeCtx(["zai"]))).resolves.toBe(false);
+  });
+
+  it("falls back to available when provider lookup throws", async () => {
+    const ctx = {
+      client: {
+        config: {
+          providers: vi.fn().mockRejectedValue(new Error("boom")),
+          get: vi.fn(),
+        },
+      },
+      config: { googleModels: [] },
+    } as any;
+
+    await expect(openaiProvider.isAvailable(ctx)).resolves.toBe(true);
+  });
 });

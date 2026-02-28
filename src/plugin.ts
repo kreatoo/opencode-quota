@@ -28,6 +28,7 @@ import { fetchSessionTokensForDisplay } from "./lib/session-tokens.js";
 import { formatQuotaStatsReport } from "./lib/quota-stats-format.js";
 import { buildQuotaStatusReport, type SessionTokenError } from "./lib/quota-status.js";
 import { refreshGoogleTokensForAllAccounts } from "./lib/google.js";
+import { getQuotaProviderDisplayLabel } from "./lib/provider-metadata.js";
 import { hasQwenOAuthAuthCached, isQwenCodeModelId } from "./lib/qwen-auth.js";
 import { recordQwenCompletion } from "./lib/qwen-local-quota.js";
 import {
@@ -38,7 +39,7 @@ import {
   formatYmd,
   type Ymd,
 } from "./lib/command-parsing.js";
-import { handled, isCommandHandledError } from "./lib/command-handled.js";
+import { handled } from "./lib/command-handled.js";
 
 // =============================================================================
 // Types
@@ -261,27 +262,6 @@ export const QuotaToastPlugin: Plugin = async ({ client }) => {
   const typedClient = client as unknown as OpencodeClient;
   const TOOL_FAILURE_STATUSES = new Set(["error", "failed", "failure", "cancelled", "canceled"]);
   const TOOL_SUCCESS_STATUSES = new Set(["success", "ok", "completed", "complete"]);
-
-  function getProviderDisplayLabel(id: string): string {
-    switch (id) {
-      case "openai":
-        return "OpenAI";
-      case "copilot":
-        return "Copilot";
-      case "google-antigravity":
-        return "Google";
-      case "firmware":
-        return "Firmware";
-      case "chutes":
-        return "Chutes";
-      case "qwen-code":
-        return "Qwen";
-      case "zai":
-        return "Z.ai";
-      default:
-        return id;
-    }
-  }
 
   /**
    * Inject tool output directly into the session without triggering an LLM response.
@@ -666,7 +646,10 @@ export const QuotaToastPlugin: Plugin = async ({ client }) => {
         const provider = active[i];
         const result = results[i];
         if (!result.attempted && result.entries.length === 0 && result.errors.length === 0) {
-          errors.push({ label: getProviderDisplayLabel(provider.id), message: "Not configured" });
+          errors.push({
+            label: getQuotaProviderDisplayLabel(provider.id),
+            message: "Not configured",
+          });
           hasExplicitProviderIssues = true;
         }
       }
@@ -684,7 +667,7 @@ export const QuotaToastPlugin: Plugin = async ({ client }) => {
           const detail =
             config.onlyCurrentModel && currentModel ? `current model: ${currentModel}` : "filtered";
           errors.push({
-            label: getProviderDisplayLabel(p.id),
+            label: getQuotaProviderDisplayLabel(p.id),
             message: `Skipped (${detail})`,
           });
           hasExplicitProviderIssues = true;
@@ -694,7 +677,7 @@ export const QuotaToastPlugin: Plugin = async ({ client }) => {
         const ok = availById.get(p.id);
         if (ok === false) {
           errors.push({
-            label: getProviderDisplayLabel(p.id),
+            label: getQuotaProviderDisplayLabel(p.id),
             message: "Unavailable (not detected)",
           });
           hasExplicitProviderIssues = true;
@@ -1182,7 +1165,9 @@ export const QuotaToastPlugin: Plugin = async ({ client }) => {
           handled();
         }
       } catch (err) {
-        if (isCommandHandledError(err)) return;
+        // IMPORTANT: do not swallow command-handled sentinel errors.
+        // In OpenCode 1.2.15, if this hook resolves, SessionPrompt.command()
+        // proceeds to prompt(...) and can invoke the tool/LLM path.
         throw err;
       }
     },

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { COMMAND_HANDLED_SENTINEL } from "../src/lib/command-handled.js";
 import { DEFAULT_CONFIG } from "../src/lib/types.js";
 
 const mocks = vi.hoisted(() => ({
@@ -66,7 +67,7 @@ describe("plugin command handled boundary", () => {
     mocks.getProviders.mockReturnValue([]);
   });
 
-  it("swallows command-handled sentinel errors", async () => {
+  it("propagates command-handled sentinel errors to abort command pipeline", async () => {
     const { QuotaToastPlugin } = await import("../src/plugin.js");
     const client = createClient();
     const hooks = await QuotaToastPlugin({ client } as any);
@@ -76,7 +77,7 @@ describe("plugin command handled boundary", () => {
         command: "quota",
         sessionID: "session-1",
       } as any),
-    ).resolves.toBeUndefined();
+    ).rejects.toThrow(COMMAND_HANDLED_SENTINEL);
 
     expect(client.session.prompt).toHaveBeenCalledTimes(1);
   });

@@ -11,6 +11,7 @@ import {
   getQwenLocalQuotaPath,
   readQwenLocalQuotaState,
 } from "./qwen-local-quota.js";
+import { hasQwenOAuthAuth } from "./qwen-auth.js";
 import {
   getPricingSnapshotMeta,
   listProviders,
@@ -269,12 +270,7 @@ export async function buildQuotaStatusReport(params: {
   lines.push(`- auth.json (present): ${authPresent.length ? authPresent.join(" | ") : "(none)"}`);
 
   const authData = await readAuthFileCached({ maxAgeMs: 5_000 });
-  const qwenAuth = authData?.["opencode-qwencode-auth"];
-  const qwenAuthConfigured =
-    !!qwenAuth &&
-    qwenAuth.type === "oauth" &&
-    typeof qwenAuth.access === "string" &&
-    qwenAuth.access.trim().length > 0;
+  const qwenAuthConfigured = hasQwenOAuthAuth(authData);
   lines.push(`- qwen oauth auth configured: ${qwenAuthConfigured ? "true" : "false"}`);
 
   const qwenLocalQuotaPath = getQwenLocalQuotaPath();

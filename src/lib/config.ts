@@ -8,6 +8,7 @@
 import type { QuotaToastConfig, GoogleModelId } from "./types.js";
 import { DEFAULT_CONFIG } from "./types.js";
 import { parseJsonOrJsonc } from "./jsonc.js";
+import { normalizeQuotaProviderId } from "./provider-metadata.js";
 
 import { existsSync } from "fs";
 import { readFile } from "fs/promises";
@@ -29,25 +30,6 @@ export function createLoadConfigMeta(): LoadConfigMeta {
  */
 function isValidGoogleModelId(id: unknown): id is GoogleModelId {
   return typeof id === "string" && ["G3PRO", "G3FLASH", "CLAUDE", "G3IMAGE"].includes(id);
-}
-
-/**
- * Normalize a provider ID for consistent matching.
- * - Trims whitespace and lowercases
- * - Maps known synonyms to canonical IDs
- */
-function normalizeProviderId(id: string): string {
-  const s = id.trim().toLowerCase();
-  switch (s) {
-    case "github-copilot":
-    case "copilot-chat":
-    case "github-copilot-chat":
-      return "copilot";
-    case "qwen":
-      return "qwen-code";
-    default:
-      return s;
-  }
 }
 
 /**
@@ -106,7 +88,7 @@ export async function loadConfig(
             ? dedupe(
                 quotaToastConfig.enabledProviders
                   .filter((p): p is string => typeof p === "string")
-                  .map(normalizeProviderId)
+                  .map(normalizeQuotaProviderId)
                   .filter(Boolean),
               )
             : DEFAULT_CONFIG.enabledProviders,

@@ -1,9 +1,8 @@
 import type { QuotaProvider, QuotaProviderContext, QuotaProviderResult } from "../lib/entries.js";
 import { computeQwenQuota, readQwenLocalQuotaState } from "../lib/qwen-local-quota.js";
-import { readAuthFileCached } from "../lib/opencode-auth.js";
 import {
   DEFAULT_QWEN_AUTH_CACHE_MAX_AGE_MS,
-  hasQwenOAuthAuth,
+  hasQwenOAuthAuthCached,
   isQwenCodeModelId,
 } from "../lib/qwen-auth.js";
 
@@ -20,8 +19,9 @@ export const qwenCodeProvider: QuotaProvider = {
   id: "qwen-code",
 
   async isAvailable(_ctx: QuotaProviderContext): Promise<boolean> {
-    const auth = await readAuthFileCached({ maxAgeMs: DEFAULT_QWEN_AUTH_CACHE_MAX_AGE_MS });
-    return hasQwenOAuthAuth(auth);
+    return await hasQwenOAuthAuthCached({
+      maxAgeMs: DEFAULT_QWEN_AUTH_CACHE_MAX_AGE_MS,
+    });
   },
 
   matchesCurrentModel(model: string): boolean {
@@ -29,8 +29,10 @@ export const qwenCodeProvider: QuotaProvider = {
   },
 
   async fetch(ctx: QuotaProviderContext): Promise<QuotaProviderResult> {
-    const auth = await readAuthFileCached({ maxAgeMs: DEFAULT_QWEN_AUTH_CACHE_MAX_AGE_MS });
-    if (!hasQwenOAuthAuth(auth)) {
+    const hasAuth = await hasQwenOAuthAuthCached({
+      maxAgeMs: DEFAULT_QWEN_AUTH_CACHE_MAX_AGE_MS,
+    });
+    if (!hasAuth) {
       return { attempted: false, entries: [], errors: [] };
     }
 

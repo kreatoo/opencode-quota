@@ -10,6 +10,7 @@
  */
 
 import type {
+  AuthData,
   CopilotAuthData,
   CopilotQuotaConfig,
   CopilotTier,
@@ -20,9 +21,9 @@ import type {
 } from "./types.js";
 import { fetchWithTimeout } from "./http.js";
 import { readAuthFile } from "./opencode-auth.js";
+import { getOpencodeRuntimeDirCandidates } from "./opencode-runtime-paths.js";
 
 import { existsSync, readFileSync } from "fs";
-import { homedir } from "os";
 import { join } from "path";
 
 // =============================================================================
@@ -39,11 +40,7 @@ const EDITOR_VERSION = "vscode/1.107.0";
 const EDITOR_PLUGIN_VERSION = `copilot-chat/${COPILOT_VERSION}`;
 const USER_AGENT = `GitHubCopilotChat/${COPILOT_VERSION}`;
 
-const COPILOT_QUOTA_CONFIG_PATH = join(
-  process.env.XDG_CONFIG_HOME || join(homedir(), ".config"),
-  "opencode",
-  "copilot-quota-token.json",
-);
+const COPILOT_QUOTA_CONFIG_FILENAME = "copilot-quota-token.json";
 
 // =============================================================================
 // Helpers
@@ -76,6 +73,61 @@ function buildLegacyTokenHeaders(token: string): Record<string, string> {
 }
 
 type GitHubRestAuthScheme = "bearer" | "token";
+
+type CopilotAuthKeyName = "github-copilot" | "copilot" | "copilot-chat";
+
+type CopilotPatTokenKind = "github_pat" | "ghp" | "other";
+
+export type CopilotPatState = "absent" | "invalid" | "valid";
+
+export interface CopilotPatReadResult {
+  state: CopilotPatState;
+  checkedPaths: string[];
+  selectedPath?: string;
+  config?: CopilotQuotaConfig;
+  error?: string;
+  tokenKind?: CopilotPatTokenKind;
+}
+
+export interface CopilotQuotaAuthDiagnostics {
+  pat: CopilotPatReadResult;
+  oauth: {
+    configured: boolean;
+    keyName: CopilotAuthKeyName | null;
+    hasRefreshToken: boolean;
+    hasAccessToken: boolean;
+  };
+  effectiveSource: "pat" | "oauth" | "none";
+  override: "pat_overrides_oauth" | "none";
+}
+
+function classifyPatTokenKind(token: string): CopilotPatTokenKind {
+  const trimmed = token.trim();
+  if (trimmed.startsWith("github_pat_")) return "github_pat";
+  if (trimmed.startsWith("ghp_")) return "ghp";
+  return "other";
+}
+
+function dedupePaths(paths: string[]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+
+  for (const path of paths) {
+    if (!path) continue;
+    if (seen.has(path)) continue;
+    seen.add(path);
+    out.push(path);
+  }
+
+  return out;
+}
+
+export function getCopilotPatConfigCandidatePaths(): string[] {
+  const candidates = getOpencodeRuntimeDirCandidates();
+  return dedupePaths(
+    candidates.configDirs.map((configDir) => join(configDir, COPILOT_QUOTA_CONFIG_FILENAME)),
+  );
+}
 
 function buildGitHubRestHeaders(
   token: string,
@@ -124,6 +176,93 @@ async function readGitHubRestErrorMessage(response: Response): Promise<string> {
   return text.slice(0, 160);
 }
 
+function validateQuotaConfig(raw: unknown): { config: CopilotQuotaConfig | null; error?: string } {
+  if (!raw || typeof raw !== "object") {
+    return { config: null, error: "Config must be a JSON object" };
+  }
+
+  const obj = raw as Record<string, unknown>;
+  const token = typeof obj.token === "string" ? obj.token.trim() : "";
+  const tierRaw = typeof obj.tier === "string" ? obj.tier.trim() : "";
+  const usernameRaw = obj.username;
+
+  if (!token) {
+    return { config: null, error: "Missing required string field: token" };
+  }
+
+  const validTiers: CopilotTier[] = ["free", "pro", "pro+", "business", "enterprise"];
+  if (!validTiers.includes(tierRaw as CopilotTier)) {
+    return {
+      config: null,
+      error: "Invalid tier; expected one of: free, pro, pro+, business, enterprise",
+    };
+  }
+
+  let username: string | undefined;
+  if (usernameRaw != null) {
+    if (typeof usernameRaw !== "string") {
+      return { config: null, error: "username must be a non-empty string when provided" };
+    }
+    const trimmed = usernameRaw.trim();
+    if (!trimmed) {
+      return { config: null, error: "username must be a non-empty string when provided" };
+    }
+    username = trimmed;
+  }
+
+  return {
+    config: {
+      token,
+      tier: tierRaw as CopilotTier,
+      username,
+    },
+  };
+}
+
+export function readQuotaConfigWithMeta(): CopilotPatReadResult {
+  const checkedPaths = getCopilotPatConfigCandidatePaths();
+
+  for (const path of checkedPaths) {
+    if (!existsSync(path)) continue;
+
+    try {
+      const content = readFileSync(path, "utf-8");
+      const parsed = JSON.parse(content) as unknown;
+      const validated = validateQuotaConfig(parsed);
+
+      if (!validated.config) {
+        return {
+          state: "invalid",
+          checkedPaths,
+          selectedPath: path,
+          error: validated.error ?? "Invalid config",
+        };
+      }
+
+      return {
+        state: "valid",
+        checkedPaths,
+        selectedPath: path,
+        config: validated.config,
+        tokenKind: classifyPatTokenKind(validated.config.token),
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return {
+        state: "invalid",
+        checkedPaths,
+        selectedPath: path,
+        error: msg,
+      };
+    }
+  }
+
+  return {
+    state: "absent",
+    checkedPaths,
+  };
+}
+
 async function fetchGitHubRestJsonOnce<T>(
   url: string,
   token: string,
@@ -154,51 +293,66 @@ async function fetchGitHubRestJsonOnce<T>(
  */
 async function readCopilotAuth(): Promise<CopilotAuthData | null> {
   const authData = await readAuthFile();
-  if (!authData) return null;
-
-  // Try known key names in priority order
-  const copilotAuth =
-    authData["github-copilot"] ??
-    (authData as Record<string, CopilotAuthData | undefined>)["copilot"] ??
-    (authData as Record<string, CopilotAuthData | undefined>)["copilot-chat"];
-
-  if (!copilotAuth || copilotAuth.type !== "oauth" || !copilotAuth.refresh) {
-    return null;
-  }
-
-  return copilotAuth;
+  return selectCopilotAuth(authData).auth;
 }
 
 /**
- * Read optional Copilot quota config from user's config file.
- * Returns null if file doesn't exist or is invalid.
+ * Select Copilot OAuth auth entry from auth.json-shaped data.
  */
-function readQuotaConfig(): CopilotQuotaConfig | null {
-  try {
-    if (!existsSync(COPILOT_QUOTA_CONFIG_PATH)) {
-      return null;
-    }
-
-    const content = readFileSync(COPILOT_QUOTA_CONFIG_PATH, "utf-8");
-    const parsed = JSON.parse(content) as CopilotQuotaConfig;
-
-    if (!parsed || typeof parsed !== "object") return null;
-
-    if (typeof parsed.token !== "string" || parsed.token.trim() === "") return null;
-    if (typeof parsed.tier !== "string" || parsed.tier.trim() === "") return null;
-
-    // Username is optional now that we prefer the /user/... billing endpoint.
-    if (parsed.username != null) {
-      if (typeof parsed.username !== "string" || parsed.username.trim() === "") return null;
-    }
-
-    const validTiers: CopilotTier[] = ["free", "pro", "pro+", "business", "enterprise"];
-    if (!validTiers.includes(parsed.tier as CopilotTier)) return null;
-
-    return parsed;
-  } catch {
-    return null;
+function selectCopilotAuth(
+  authData: AuthData | null,
+): { auth: CopilotAuthData | null; keyName: CopilotAuthKeyName | null } {
+  if (!authData) {
+    return { auth: null, keyName: null };
   }
+
+  const candidates: Array<[CopilotAuthKeyName, CopilotAuthData | undefined]> = [
+    ["github-copilot", authData["github-copilot"]],
+    ["copilot", (authData as Record<string, CopilotAuthData | undefined>).copilot],
+    ["copilot-chat", (authData as Record<string, CopilotAuthData | undefined>)["copilot-chat"]],
+  ];
+
+  for (const [keyName, candidate] of candidates) {
+    if (!candidate) continue;
+    if (candidate.type !== "oauth") continue;
+    if (!candidate.refresh) continue;
+    return { auth: candidate, keyName };
+  }
+
+  return { auth: null, keyName: null };
+}
+
+export function getCopilotQuotaAuthDiagnostics(authData: AuthData | null): CopilotQuotaAuthDiagnostics {
+  const pat = readQuotaConfigWithMeta();
+  const { auth, keyName } = selectCopilotAuth(authData);
+  const oauthConfigured = Boolean(auth);
+
+  let effectiveSource: "pat" | "oauth" | "none" = "none";
+  if (pat.state === "valid") {
+    effectiveSource = "pat";
+  } else if (oauthConfigured) {
+    effectiveSource = "oauth";
+  }
+
+  return {
+    pat,
+    oauth: {
+      configured: oauthConfigured,
+      keyName,
+      hasRefreshToken: Boolean(auth?.refresh),
+      hasAccessToken: Boolean(auth?.access),
+    },
+    effectiveSource,
+    override: pat.state === "valid" && oauthConfigured ? "pat_overrides_oauth" : "none",
+  };
+}
+
+function computePercentRemainingFromUsed(params: { used: number; total: number }): number {
+  const { used, total } = params;
+  if (!Number.isFinite(total) || total <= 0) return 0;
+  if (!Number.isFinite(used) || used <= 0) return 100;
+  const usedPct = Math.max(0, Math.min(100, Math.ceil((used / total) * 100)));
+  return 100 - usedPct;
 }
 
 // Public billing API response types (keep local; only used here)
@@ -305,12 +459,12 @@ function toQuotaResultFromBilling(
     throw new Error(`Unsupported Copilot tier: ${tier}`);
   }
 
-  const remaining = Math.max(0, total - used);
-  const percentRemaining = Math.max(0, Math.min(100, Math.round((remaining / total) * 100)));
+  const normalizedUsed = Math.max(0, used);
+  const percentRemaining = computePercentRemainingFromUsed({ used: normalizedUsed, total });
 
   return {
     success: true,
-    used,
+    used: normalizedUsed,
     total,
     percentRemaining,
     resetTimeIso: getApproxNextResetIso(),
@@ -418,11 +572,11 @@ async function fetchCopilotUsage(authData: CopilotAuthData): Promise<CopilotUsag
  */
 export async function queryCopilotQuota(): Promise<CopilotResult> {
   // Strategy 1: Try public billing API with user's fine-grained PAT.
-  const quotaConfig = readQuotaConfig();
-  if (quotaConfig) {
+  const quotaConfigRead = readQuotaConfigWithMeta();
+  if (quotaConfigRead.state === "valid" && quotaConfigRead.config) {
     try {
-      const billing = await fetchPublicBillingUsage(quotaConfig);
-      return toQuotaResultFromBilling(billing, quotaConfig.tier);
+      const billing = await fetchPublicBillingUsage(quotaConfigRead.config);
+      return toQuotaResultFromBilling(billing, quotaConfigRead.config.tier);
     } catch (err) {
       return {
         success: false,
@@ -459,8 +613,30 @@ export async function queryCopilotQuota(): Promise<CopilotResult> {
     }
 
     const total = premium.entitlement;
-    const used = total - premium.remaining;
-    const percentRemaining = Math.round(premium.percent_remaining);
+    if (!Number.isFinite(total) || total <= 0) {
+      return {
+        success: false,
+        error: "Invalid premium quota entitlement",
+      } as QuotaError;
+    }
+
+    const remainingRaw =
+      typeof premium.remaining === "number"
+        ? premium.remaining
+        : typeof premium.quota_remaining === "number"
+          ? premium.quota_remaining
+          : NaN;
+
+    if (!Number.isFinite(remainingRaw)) {
+      return {
+        success: false,
+        error: "Invalid premium quota remaining value",
+      } as QuotaError;
+    }
+
+    const remaining = Math.max(0, Math.min(total, remainingRaw));
+    const used = Math.max(0, total - remaining);
+    const percentRemaining = computePercentRemainingFromUsed({ used, total });
 
     return {
       success: true,

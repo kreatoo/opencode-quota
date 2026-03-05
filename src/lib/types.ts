@@ -117,8 +117,9 @@ export type CopilotTier = "free" | "pro" | "pro+" | "business" | "enterprise";
  * Copilot quota token configuration.
  *
  * Stored locally in:
- * - $XDG_CONFIG_HOME/opencode/copilot-quota-token.json, or
- * - ~/.config/opencode/copilot-quota-token.json
+ * - OpenCode runtime config candidate directories as
+ *   `.../opencode/copilot-quota-token.json`
+ *   (for example `$XDG_CONFIG_HOME/opencode` or `~/.config/opencode`)
  *
  * Users can create a fine-grained PAT with "Plan" read permission
  * to enable quota checking via GitHub's public billing API.

@@ -1,31 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const fsMocks = vi.hoisted(() => ({
-<<<<<<< Updated upstream
-  existsSync: vi.fn<(path: string) => boolean>(() => false),
-  readFileSync: vi.fn<(path: string, encoding: BufferEncoding) => string>(() => ""),
-}));
-
-const runtimeMocks = vi.hoisted(() => ({
-  getOpencodeRuntimeDirCandidates: vi.fn(() => ({
-    dataDirs: ["/home/test/.local/share/opencode"],
-    configDirs: [
-      "/home/test/.config/opencode",
-      "/home/test/Library/Application Support/opencode",
-    ],
-    cacheDirs: ["/home/test/.cache/opencode"],
-    stateDirs: ["/home/test/.local/state/opencode"],
-  })),
-  getOpencodeRuntimeDirs: vi.fn(() => ({
-    dataDir: "/home/test/.local/share/opencode",
-    configDir: "/home/test/.config/opencode",
-    cacheDir: "/home/test/.cache/opencode",
-    stateDir: "/home/test/.local/state/opencode",
-  })),
-=======
   existsSync: vi.fn(() => false),
   readFileSync: vi.fn(),
->>>>>>> Stashed changes
 }));
 
 const authMocks = vi.hoisted(() => ({
@@ -42,17 +19,12 @@ vi.mock("fs", async (importOriginal) => {
 });
 
 vi.mock("../src/lib/opencode-runtime-paths.js", () => ({
-<<<<<<< Updated upstream
-  getOpencodeRuntimeDirCandidates: runtimeMocks.getOpencodeRuntimeDirCandidates,
-  getOpencodeRuntimeDirs: runtimeMocks.getOpencodeRuntimeDirs,
-=======
   getOpencodeRuntimeDirCandidates: () => ({
     dataDirs: ["/home/test/.local/share/opencode"],
     configDirs: ["/home/test/.config/opencode"],
     cacheDirs: ["/home/test/.cache/opencode"],
     stateDirs: ["/home/test/.local/state/opencode"],
   }),
->>>>>>> Stashed changes
 }));
 
 vi.mock("../src/lib/opencode-auth.js", () => ({
@@ -61,7 +33,6 @@ vi.mock("../src/lib/opencode-auth.js", () => ({
 
 const patPath = "/home/test/.config/opencode/copilot-quota-token.json";
 const realEnv = process.env;
-const patPath = "/home/test/.config/opencode/copilot-quota-token.json";
 
 describe("queryCopilotQuota", () => {
   beforeEach(() => {
@@ -70,24 +41,12 @@ describe("queryCopilotQuota", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-15T12:00:00.000Z"));
     process.env = { ...realEnv };
-<<<<<<< Updated upstream
-    vi.resetModules();
-
-    fsMocks.existsSync.mockReset();
-    fsMocks.readFileSync.mockReset();
-    authMocks.readAuthFile.mockReset();
-
-    fsMocks.existsSync.mockReturnValue(false);
-    fsMocks.readFileSync.mockReturnValue("");
-    authMocks.readAuthFile.mockResolvedValue({});
-=======
     fsMocks.existsSync.mockReset();
     fsMocks.existsSync.mockReturnValue(false);
     fsMocks.readFileSync.mockReset();
     authMocks.readAuthFile.mockReset();
     authMocks.readAuthFile.mockResolvedValue({});
     vi.stubGlobal("fetch", vi.fn(async () => new Response("not found", { status: 404 })) as any);
->>>>>>> Stashed changes
   });
 
   afterEach(() => {
@@ -98,54 +57,16 @@ describe("queryCopilotQuota", () => {
 
   it("returns null when no PAT config and no OpenCode Copilot auth exist", async () => {
     const { queryCopilotQuota } = await import("../src/lib/copilot.js");
-<<<<<<< Updated upstream
-    authMocks.readAuthFile.mockResolvedValueOnce({});
-=======
->>>>>>> Stashed changes
 
     await expect(queryCopilotQuota()).resolves.toBeNull();
   });
 
-<<<<<<< Updated upstream
-  it("uses PAT billing API when PAT config exists and overrides OAuth auth", async () => {
-    const { queryCopilotQuota } = await import("../src/lib/copilot.js");
-
-=======
   it("prefers PAT billing config over OpenCode auth when both exist", async () => {
->>>>>>> Stashed changes
     fsMocks.existsSync.mockImplementation((path) => path === patPath);
     fsMocks.readFileSync.mockReturnValue(
       JSON.stringify({
         token: "github_pat_123456789",
         tier: "pro",
-<<<<<<< Updated upstream
-      }),
-    );
-
-    authMocks.readAuthFile.mockResolvedValueOnce({
-      "github-copilot": { type: "oauth", refresh: "gho_oauth_token" },
-    });
-
-    const fetchMock = vi.fn(async (url: unknown, opts: RequestInit | undefined) => {
-      const s = String(url);
-
-      if (s.includes("/user/settings/billing/premium_request/usage")) {
-        expect((opts?.headers as Record<string, string> | undefined)?.Authorization).toBe(
-          "Bearer github_pat_123456789",
-        );
-
-        return new Response(
-          JSON.stringify({
-            timePeriod: { year: 2026, month: 1 },
-            user: "halfwalker",
-            usageItems: [
-              {
-                product: "copilot",
-                sku: "Copilot Premium Request",
-                unitType: "count",
-                grossQuantity: 1,
-                netQuantity: 1,
-=======
         username: "alice",
       }),
     );
@@ -163,7 +84,6 @@ describe("queryCopilotQuota", () => {
               {
                 sku: "Copilot Premium Request",
                 grossQuantity: 42,
->>>>>>> Stashed changes
                 limit: 300,
               },
             ],
@@ -177,46 +97,6 @@ describe("queryCopilotQuota", () => {
 
     vi.stubGlobal("fetch", fetchMock as any);
 
-<<<<<<< Updated upstream
-    const out = await queryCopilotQuota();
-    expect(out && out.success ? out.total : -1).toBe(300);
-    expect(out && out.success ? out.used : -1).toBe(1);
-    expect(out && out.success ? out.percentRemaining : -1).toBe(99);
-    expect(authMocks.readAuthFile).not.toHaveBeenCalled();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
-
-  it("falls back to OAuth/internal flow when PAT config is invalid", async () => {
-    const { getCopilotQuotaAuthDiagnostics, queryCopilotQuota } = await import("../src/lib/copilot.js");
-
-    fsMocks.existsSync.mockImplementation((path) => path === patPath);
-    fsMocks.readFileSync.mockReturnValue("{bad-json");
-
-    const oauthAuth = {
-      "github-copilot": { type: "oauth", refresh: "gho_abc" },
-    };
-    authMocks.readAuthFile.mockResolvedValueOnce(oauthAuth);
-
-    const fetchMock = vi.fn(async (url: unknown) => {
-      const s = String(url);
-      if (s.includes("/copilot_internal/user")) {
-        return new Response(
-          JSON.stringify({
-            copilot_plan: "pro",
-            quota_reset_date: "2026-02-01T00:00:00.000Z",
-            quota_snapshots: {
-              premium_interactions: {
-                entitlement: 300,
-                remaining: 299,
-                percent_remaining: 100,
-                unlimited: false,
-                overage_count: 0,
-                overage_permitted: false,
-                quota_id: "x",
-                quota_remaining: 0,
-              },
-            },
-=======
     const { queryCopilotQuota } = await import("../src/lib/copilot.js");
     const result = await queryCopilotQuota();
 
@@ -255,7 +135,6 @@ describe("queryCopilotQuota", () => {
                 limit: 300,
               },
             ],
->>>>>>> Stashed changes
           }),
           { status: 200 },
         );
@@ -266,23 +145,6 @@ describe("queryCopilotQuota", () => {
 
     vi.stubGlobal("fetch", fetchMock as any);
 
-<<<<<<< Updated upstream
-    const out = await queryCopilotQuota();
-    expect(out && out.success ? out.total : -1).toBe(300);
-    expect(out && out.success ? out.used : -1).toBe(1);
-    expect(out && out.success ? out.percentRemaining : -1).toBe(99);
-
-    const diag = getCopilotQuotaAuthDiagnostics(oauthAuth as any);
-    expect(diag.pat.state).toBe("invalid");
-    expect(diag.pat.selectedPath).toBe(patPath);
-    expect(diag.effectiveSource).toBe("oauth");
-    expect(diag.override).toBe("none");
-  });
-
-  it("returns PAT error and does not fall back to OAuth when PAT is rejected", async () => {
-    const { queryCopilotQuota } = await import("../src/lib/copilot.js");
-
-=======
     const { queryCopilotQuota } = await import("../src/lib/copilot.js");
     const result = await queryCopilotQuota();
 
@@ -388,72 +250,11 @@ describe("queryCopilotQuota", () => {
   });
 
   it("handles snake_case billing response fields", async () => {
->>>>>>> Stashed changes
     fsMocks.existsSync.mockImplementation((path) => path === patPath);
     fsMocks.readFileSync.mockReturnValue(
       JSON.stringify({
         token: "github_pat_123456789",
         tier: "pro",
-<<<<<<< Updated upstream
-      }),
-    );
-
-    authMocks.readAuthFile.mockResolvedValueOnce({
-      "github-copilot": { type: "oauth", refresh: "gho_should_not_be_used" },
-    });
-
-    const fetchMock = vi.fn(async (url: unknown) => {
-      const s = String(url);
-
-      if (s.includes("/user/settings/billing/premium_request/usage")) {
-        return new Response(JSON.stringify({ message: "Forbidden" }), { status: 403 });
-      }
-
-      if (s.includes("/copilot_internal/user")) {
-        return new Response("unexpected oauth fallback", { status: 200 });
-      }
-
-      return new Response("not found", { status: 404 });
-    });
-
-    vi.stubGlobal("fetch", fetchMock as any);
-
-    const out = await queryCopilotQuota();
-    expect(out && !out.success ? out.error : "").toContain("GitHub API error 403");
-    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/copilot_internal/user"))).toBe(
-      false,
-    );
-    expect(authMocks.readAuthFile).not.toHaveBeenCalled();
-  });
-
-  it("computes remaining percentage from entitlement/remaining when OAuth response percent is stale", async () => {
-    const { queryCopilotQuota } = await import("../src/lib/copilot.js");
-
-    authMocks.readAuthFile.mockResolvedValueOnce({
-      "github-copilot": { type: "oauth", refresh: "gho_abc" },
-    });
-
-    const fetchMock = vi.fn(async (url: unknown) => {
-      const s = String(url);
-
-      if (s.includes("/copilot_internal/user")) {
-        return new Response(
-          JSON.stringify({
-            copilot_plan: "pro",
-            quota_reset_date: "2026-02-01T00:00:00.000Z",
-            quota_snapshots: {
-              premium_interactions: {
-                entitlement: 300,
-                remaining: 299,
-                percent_remaining: 100,
-                unlimited: false,
-                overage_count: 0,
-                overage_permitted: false,
-                quota_id: "x",
-                quota_remaining: 299,
-              },
-            },
-=======
         username: "alice",
       }),
     );
@@ -471,7 +272,6 @@ describe("queryCopilotQuota", () => {
                 limit: 300,
               },
             ],
->>>>>>> Stashed changes
           }),
           { status: 200 },
         );
@@ -482,11 +282,6 @@ describe("queryCopilotQuota", () => {
 
     vi.stubGlobal("fetch", fetchMock as any);
 
-<<<<<<< Updated upstream
-    const out = await queryCopilotQuota();
-    expect(out && out.success ? out.used : -1).toBe(1);
-    expect(out && out.success ? out.percentRemaining : -1).toBe(99);
-=======
     const { queryCopilotQuota } = await import("../src/lib/copilot.js");
     const result = await queryCopilotQuota();
 
@@ -559,6 +354,5 @@ describe("queryCopilotQuota", () => {
     expect(diagnostics.oauth.configured).toBe(true);
     expect(diagnostics.effectiveSource).toBe("pat");
     expect(diagnostics.override).toBe("pat_overrides_oauth");
->>>>>>> Stashed changes
   });
 });

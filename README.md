@@ -138,25 +138,11 @@ For organization-managed Copilot plans such as `business` or `enterprise`, `orga
 
 Tier options: `free`, `pro`, `pro+`, `business`, `enterprise`
 
-<<<<<<< Updated upstream
-PAT scope guidance (read-only first):
-
-- Personal/user-billed Copilot usage: fine-grained PAT with **Account permissions > Plan > Read**.
-- Organization-managed Copilot usage metrics: classic token with **`read:org`** (or fine-grained org permission **Organization Copilot metrics: read** when using org metrics endpoints).
-- Enterprise-managed Copilot usage metrics: classic token with **`read:enterprise`**.
-
-GitHub notes that user-level billing endpoints may not include usage for org/enterprise-managed seats; use org/enterprise metrics endpoints in that case.
-
-When both Copilot OAuth auth and `copilot-quota-token.json` are present, the plugin prefers the PAT billing path for quota metrics.
-Run `/quota_status` and check `copilot_quota_auth` to confirm `pat_state`, candidate paths checked, and `effective_source`/`override`.
-
-=======
 If both OpenCode Copilot auth and `copilot-quota-token.json` are present, the plugin uses the PAT config first.
 
 For personal plans, a PAT is optional. Use it only if you want an explicit tier override for quota totals.
 
 Run `/quota_status` and check `copilot_quota_auth` to confirm `pat_state`, `pat_organization`, candidate paths checked, and `effective_source`/`override`.
->>>>>>> Stashed changes
 </details>
 
 <details>

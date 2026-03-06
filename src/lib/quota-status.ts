@@ -13,7 +13,6 @@ import {
   readQwenLocalQuotaState,
 } from "./qwen-local-quota.js";
 import { hasQwenOAuthAuth } from "./qwen-auth.js";
-import { getCopilotQuotaAuthDiagnostics } from "./copilot.js";
 import {
   getPricingSnapshotHealth,
   getPricingRefreshPolicy,
@@ -349,12 +348,9 @@ export async function buildQuotaStatusReport(params: {
   if (copilotDiag.pat.config?.tier) {
     lines.push(`- pat_tier: ${copilotDiag.pat.config.tier}`);
   }
-<<<<<<< Updated upstream
-=======
   if (copilotDiag.pat.config?.organization) {
     lines.push(`- pat_organization: ${copilotDiag.pat.config.organization}`);
   }
->>>>>>> Stashed changes
   if (copilotDiag.pat.error) {
     lines.push(`- pat_error: ${copilotDiag.pat.error}`);
   }
@@ -366,10 +362,6 @@ export async function buildQuotaStatusReport(params: {
   );
   lines.push(`- effective_source: ${copilotDiag.effectiveSource}`);
   lines.push(`- override: ${copilotDiag.override}`);
-<<<<<<< Updated upstream
-
-=======
->>>>>>> Stashed changes
   const googleTokenCachePath = getGoogleTokenCachePath();
   lines.push(
     `- google token cache: ${googleTokenCachePath}${(await pathExists(googleTokenCachePath)) ? "" : " (missing)"}`,

@@ -1,126 +1,142 @@
 # Opencode Quota
 
-Track OpenCode quota & tokens via Toasts/Commands with zero context window pollution.
+Local quota toasts and token reports for OpenCode, with zero LLM/model API calls.
 
-**Quota provider supports**: GitHub Copilot, OpenAI (Plus/Pro), Qwen Code, Chutes AI, Firmware AI, Google Antigravity, and Z.ai coding plan.
+`opencode-quota` gives you two things:
 
-**Token provider supports**: All models and providers in [models.dev](https://models.dev).
+- Automatic quota toasts after assistant responses
+- Manual `/quota` and `/tokens_*` commands for deeper local reporting
 
-## What It Does
-
-**Quota Toasts** - See your remaining quota at a glance after each assistant response.
+Supported quota providers: GitHub Copilot, OpenAI, Qwen Code, Chutes AI, Firmware AI, Google Antigravity, and Z.ai.  
+Supported token pricing: any provider/model present in the local `models.dev` snapshot shipped with the plugin.
 
 ![Image of quota toasts](https://github.com/slkiser/opencode-quota/blob/main/toast.png)
 
-**Token Report Commands** - Track token usage and estimated costs across sessions using local OpenCode SQLite history plus a local models.dev pricing snapshot. The plugin can refresh that local snapshot at runtime when stale.
-
 ![Image of /quota and /tokens_daily outputs](https://github.com/slkiser/opencode-quota/blob/main/quota.png)
 
-## Requirements
+## Quick Start
 
-- OpenCode >= 1.2.0 (uses SQLite `opencode.db` for session/message history)
+OpenCode `>= 1.2.0` is required.
 
-This plugin no longer supports the legacy folder-based JSON session storage used by older OpenCode versions.
+Add the plugin to your `opencode.json` or `opencode.jsonc`:
 
-## Installation
-
-Add to your `opencode.json` (strict JSON) or `opencode.jsonc` (JSONC with comments/trailing commas):
-
-```json
+```jsonc
 {
   "plugin": ["@slkiser/opencode-quota"]
 }
 ```
 
-That's it. Providers are auto-detected based on your OpenCode configuration. Toasts appear automatically after assistant responses.
+Then:
 
-**Optional:** To restrict which providers are queried, set `enabledProviders` explicitly:
+1. Restart or reload OpenCode.
+2. Run `/quota_status` to confirm provider detection.
+3. Run `/quota` to see the manual grouped report.
 
-```json
+That is enough for most installs. Providers are auto-detected from your existing OpenCode setup.
+
+## What You Get
+
+- Toasts after assistant responses, idle transitions, and compaction events
+- `/quota` for a grouped manual quota report such as `[OpenAI] (Pro)` or `[Copilot] (business)`
+- `/tokens_*` commands backed by local OpenCode history and a local pricing snapshot
+- No model calls to compute the toast or report output
+
+## Common Install Patterns
+
+### Basic install
+
+If you already use Copilot, OpenAI, Firmware, Chutes, or Z.ai in OpenCode, start here:
+
+```jsonc
+{
+  "plugin": ["@slkiser/opencode-quota"]
+}
+```
+
+### Google Antigravity
+
+Google quota support depends on the companion auth plugin:
+
+```jsonc
+{
+  "plugin": ["opencode-antigravity-auth", "@slkiser/opencode-quota"]
+}
+```
+
+### Qwen Code
+
+Qwen quota support depends on the companion auth plugin:
+
+```jsonc
+{
+  "plugin": ["opencode-qwencode-auth", "@slkiser/opencode-quota"]
+}
+```
+
+## Commands
+
+| Command | What it shows |
+| --- | --- |
+| `/quota` | Manual grouped quota report |
+| `/quota_status` | Diagnostics: config, provider availability, account detection, pricing snapshot health |
+| `/tokens_today` | Tokens used today (calendar day) |
+| `/tokens_daily` | Tokens used in the last 24 hours |
+| `/tokens_weekly` | Tokens used in the last 7 days |
+| `/tokens_monthly` | Tokens used in the last 30 days, including pricing sections |
+| `/tokens_all` | Tokens used across all local history |
+| `/tokens_session` | Tokens used in the current session |
+| `/tokens_between` | Tokens used between two dates: `YYYY-MM-DD YYYY-MM-DD` |
+
+There is no `/token` command. The reporting commands are the `/tokens_*` family.
+
+## Minimal Config
+
+You do not need extra config to get started. If you want to narrow the plugin to specific providers, use:
+
+```jsonc
 {
   "experimental": {
     "quotaToast": {
-      "enabledProviders": ["copilot", "openai", "qwen-code", "google-antigravity"]
+      "enabledProviders": ["copilot", "openai", "google-antigravity"]
     }
   }
 }
 ```
 
-> **LLM Agents:** Ask your agent to install `https://github.com/slkiser/opencode-quota` with the providers you have enabled. See [LLM Agent Installation Instructions](#llm-agent-installation-instructions) for details.
+If you want grouped toast layout instead of the default classic toast:
 
-## Commands
-
-| Command           | Description                                                     |
-| ----------------- | --------------------------------------------------------------- |
-| `/quota`          | Show quota toast (verbose)                                      |
-| `/quota_status`   | Show diagnostics (config, providers, accounts) + pricing health |
-|                   |                                                                 |
-| `/tokens_today`   | Tokens used today (calendar day)                                |
-| `/tokens_daily`   | Tokens used in last 24 hours                                    |
-| `/tokens_weekly`  | Tokens used in last 7 days                                      |
-| `/tokens_monthly` | Tokens used in last 30 days (incl. pricing sections)            |
-| `/tokens_all`     | Tokens used all time                                            |
-| `/tokens_session` | Tokens used in current session                                  |
-| `/tokens_between` | Tokens between two dates (YYYY-MM-DD)                           |
-
-Token reporting commands are the `/tokens_*` family (there is no `/token` command).
-
-## Supported Quota Providers
-
-| Provider           | Config ID            | Auth Source                                   |
-| ------------------ | -------------------- | --------------------------------------------- |
-| GitHub Copilot     | `copilot`            | OpenCode auth (automatic), PAT for org billing |
-| OpenAI (Plus/Pro)  | `openai`             | OpenCode auth (automatic)                     |
-| Qwen Code (OAuth)  | `qwen-code`          | OpenCode auth via `opencode-qwencode-auth`    |
-| Firmware AI        | `firmware`           | OpenCode auth or API key                      |
-| Chutes AI          | `chutes`             | OpenCode auth or API key                      |
-| Google Antigravity | `google-antigravity` | Multi-account via `opencode-antigravity-auth` |
-| Z.ai               | `zai`                | OpenCode auth (automatic)                     |
-
-Token pricing coverage is broader than quota provider support: `/tokens_*` maps usage against provider/model entries in the active local models.dev pricing snapshot.
-
-Pricing refresh ownership is now runtime-based:
-
-- A bundled snapshot (`src/data/modelsdev-pricing.min.json`) is always shipped as bootstrap/offline fallback.
-- At plugin runtime, when `experimental.quotaToast.enabled` is `true`, pricing refresh runs as a bounded best-effort check (once per process window, plus persisted attempt tracking) during init and before `/tokens_*` / `/quota_status` report paths.
-- If the active snapshot is older than 3 days, the plugin attempts to fetch `https://models.dev/api.json`, keeps only `input`, `output`, `cache_read`, `cache_write`, and writes a refreshed local runtime snapshot.
-- If fetch fails, reports continue using the last local snapshot (no hard failure).
-
-Runtime snapshot files are stored under the OpenCode cache directory:
-
-- `.../opencode/opencode-quota/modelsdev-pricing.runtime.min.json`
-- `.../opencode/opencode-quota/modelsdev-pricing.refresh-state.json`
-
-Runtime refresh toggles:
-
-```sh
-# Disable runtime pricing refresh
-OPENCODE_QUOTA_PRICING_AUTO_REFRESH=0
-
-# Change stale threshold (default: 3 days)
-OPENCODE_QUOTA_PRICING_MAX_AGE_DAYS=5
+```jsonc
+{
+  "experimental": {
+    "quotaToast": {
+      "toastStyle": "grouped"
+    }
+  }
+}
 ```
 
-Maintainer-only bundled snapshot refresh (manual):
+`/quota` already uses grouped formatting by default, even if toast style stays `classic`.
 
-```sh
-npm run pricing:refresh
-npm run pricing:refresh:if-stale
-npm run build
-```
+## Provider Setup At A Glance
 
-`pricing:refresh:if-stale` uses the same env knobs as runtime refresh (`OPENCODE_QUOTA_PRICING_AUTO_REFRESH`, `OPENCODE_QUOTA_PRICING_MAX_AGE_DAYS`).
+| Provider | Works automatically | Extra setup when needed |
+| --- | --- | --- |
+| GitHub Copilot | Personal usage via existing OpenCode auth | Add `copilot-quota-token.json` for managed org or enterprise billing |
+| OpenAI | Yes | None |
+| Qwen Code | Needs `opencode-qwencode-auth` | Local-only quota estimation, no remote Qwen quota API |
+| Firmware AI | Usually yes | Optional API key |
+| Chutes AI | Usually yes | Optional API key |
+| Google Antigravity | Needs `opencode-antigravity-auth` | Multi-account account file lives in OpenCode runtime config |
+| Z.ai | Yes | None |
 
-### Provider-Specific Setup
+## Provider-Specific Notes
 
 <details>
 <summary><strong>GitHub Copilot</strong></summary>
 
-**Setup:** Personal Copilot usage works automatically when OpenCode has Copilot configured and logged in.
+Personal Copilot quota works automatically when OpenCode is already signed in.
 
-**Personal usage:** No extra setup required. The plugin uses OpenCode auth to query your user billing report.
-
-**Managed usage:** Create `copilot-quota-token.json` under OpenCode's runtime config directory (see `opencode debug paths`).
+For managed billing, create `copilot-quota-token.json` under the OpenCode runtime config directory. You can find the directory with `opencode debug paths`.
 
 Organization example:
 
@@ -144,70 +160,55 @@ Enterprise example:
 }
 ```
 
-`business` requires `organization`. `enterprise` accepts either:
+Behavior notes:
 
-- `enterprise` to query `/enterprises/{enterprise}/settings/billing/premium_request/usage`
-- `organization` to keep using the organization billing endpoint for backwards compatibility
+- Personal output is labeled `[Copilot] (personal)`.
+- Managed organization and enterprise output is labeled `[Copilot] (business)`.
+- Managed output includes the org or enterprise slug in the value line so the billing scope is still visible.
+- If both OpenCode OAuth and `copilot-quota-token.json` exist, the PAT config wins.
+- If the PAT config is invalid, the plugin reports that error and does not silently fall back to OAuth.
+- `business` requires `organization`.
+- Enterprise premium usage does not support fine-grained PATs or GitHub App tokens. Use a supported enterprise token such as a classic PAT.
 
-`username` remains optional and is used as the `?user=` filter on organization and enterprise reports.
+Useful checks:
 
-Organization and enterprise managed modes report pooled premium usage for the current billing period. They do not represent a single user's quota, and the available GitHub billing API/config does not provide a reliable way to derive a true per-user remaining premium quota from pooled usage.
+- Run `/quota_status` and inspect `copilot_quota_auth`.
+- Look for `billing_mode`, `billing_scope`, `effective_source`, and `billing_api_access_likely`.
 
-Managed `/quota` and toast output include the organization or enterprise identifier, the billing month, and any configured organization or user filters so pooled usage is easier to interpret.
-
-Run `/quota_status` and check `copilot_quota_auth` to confirm whether the plugin is in `user_quota`, `organization_usage`, or `enterprise_usage` mode. In managed modes, `billing_api_access_likely=true` means the token should be able to query billing usage, but it does not mean per-user remaining totals can be computed.
-
-- **Organization PAT permission:** fine-grained PAT with **Organization permissions > Administration > Read**.
-- **Enterprise token requirement:** GitHub's enterprise premium usage endpoint does **not** support fine-grained PATs or GitHub App access tokens. Use a supported enterprise token such as a classic PAT.
-
-Tier options: `free`, `pro`, `pro+`, `business`, `enterprise`
-
-If both OpenCode Copilot auth and `copilot-quota-token.json` are present, the plugin uses the PAT config first.
-
-If `copilot-quota-token.json` is present but invalid, unsupported for the selected billing scope, or otherwise unusable, the plugin returns that PAT/config error and does **not** fall back to OpenCode OAuth automatically.
-
-For personal plans, a PAT is optional. Use it only if you want an explicit tier override for quota totals.
-
-If you need isolated individual Copilot premium tracking, use an account or setup that is billed and managed as a single person instead of relying on pooled organization or enterprise usage.
-
-Run `/quota_status` and check `copilot_quota_auth` to confirm `pat_state`, `pat_organization`, `pat_enterprise`, `billing_mode`, `billing_scope`, candidate paths checked, and `effective_source`/`override`.
 </details>
 
 <details>
 <summary><strong>OpenAI</strong></summary>
 
-**Setup:** Works automatically if OpenCode has OpenAI/ChatGPT configured.
+No extra setup is required if OpenCode already has OpenAI or ChatGPT auth configured.
 
 </details>
 
 <details>
 <summary><strong>Qwen Code</strong></summary>
 
-**Setup:** Requires OAuth credentials from the `opencode-qwencode-auth` plugin.
+Qwen support is local-only estimation. The plugin does not call an Alibaba quota API.
 
-Quota output for Qwen is **local-only estimation**:
+Current behavior:
 
-- 1000 requests per UTC day (resets at UTC midnight)
+- 1000 requests per UTC day
 - 60 requests per rolling minute
-- Counter increments on successful question-tool completions while plugin is enabled and current model is `qwen-code/*`
+- Counters increment on successful question-tool completions while the current model is `qwen-code/*`
 
-No remote quota endpoint is called for Qwen and Alibaba API is not used.
+State file path:
 
-Local state file path:
+- `.../opencode/opencode-quota/qwen-local-quota.json`
 
-- `.../opencode/opencode-quota/qwen-local-quota.json` (under OpenCode state dir)
-
-Use `/quota_status` to verify auth detection and local Qwen counter status.
-If the local Qwen state file is missing, `/quota_status` reports usage from a default empty state.
+Run `/quota_status` to verify auth detection and local counter status.
 
 </details>
 
 <details>
 <summary><strong>Firmware AI</strong></summary>
 
-**Setup:** Works automatically if OpenCode has Firmware configured. Alternatively, provide an API key:
+If OpenCode already has Firmware configured, it usually works automatically. You can also provide an API key:
 
-```json
+```jsonc
 {
   "provider": {
     "firmware": {
@@ -224,16 +225,16 @@ If the local Qwen state file is missing, `/quota_status` reports usage from a de
 }
 ```
 
-The `apiKey` field supports `{env:VAR_NAME}` syntax or a direct key.
+`{env:VAR_NAME}` and direct keys are both supported.
 
 </details>
 
 <details>
 <summary><strong>Chutes AI</strong></summary>
 
-**Setup:** Works automatically if OpenCode has Chutes configured. Alternatively, provide an API key:
+If OpenCode already has Chutes configured, it usually works automatically. You can also provide an API key:
 
-```json
+```jsonc
 {
   "provider": {
     "chutes": {
@@ -255,58 +256,79 @@ The `apiKey` field supports `{env:VAR_NAME}` syntax or a direct key.
 <details>
 <summary><strong>Google Antigravity</strong></summary>
 
-**Setup:** Requires the `opencode-antigravity-auth` plugin for multi-account support:
+This provider requires the `opencode-antigravity-auth` plugin. Account credentials are stored under the OpenCode runtime config directory.
 
-```json
-{
-  "plugin": ["opencode-antigravity-auth", "@slkiser/opencode-quota"]
-}
-```
-
-Account credentials are stored under OpenCode's runtime config directory (see `opencode debug paths`).
-
-If you are troubleshooting, `/quota_status` prints the candidate paths checked for `antigravity-accounts.json`.
+If you are debugging detection, `/quota_status` prints the candidate paths checked for `antigravity-accounts.json`.
 
 </details>
 
 <details>
 <summary><strong>Z.ai</strong></summary>
 
-**Setup:** Works automatically if OpenCode has Z.ai (Coding Plan) configured.
+No extra setup is required if OpenCode already has Z.ai configured.
 
 </details>
 
 ## Configuration Reference
 
-All options go under `experimental.quotaToast` in `opencode.json` or `opencode.jsonc`:
+All plugin settings live under `experimental.quotaToast`.
 
-| Option              | Default      | Description                                                                                          |
-| ------------------- | ------------ | ---------------------------------------------------------------------------------------------------- |
-| `enabled`           | `true`       | Enable/disable plugin. When `false`, `/quota`, `/quota_status`, and `/tokens_*` are strict no-ops. |
-| `enableToast`       | `true`       | Show popup toasts                                                                                    |
-| `toastStyle`        | `classic`    | Toast layout style: `classic` or `grouped`                                                           |
-| `enabledProviders`  | `"auto"`     | Provider IDs to query, or `"auto"` to detect                                                         |
-| `minIntervalMs`     | `300000`     | Minimum ms between provider fetches (default: 5 min); Qwen local RPM stays live on question triggers |
-| `toastDurationMs`   | `9000`       | How long toasts display (ms)                                                                         |
-| `showOnIdle`        | `true`       | Show toast on idle trigger                                                                           |
-| `showOnQuestion`    | `true`       | Show toast after a question/assistant response                                                       |
-| `showOnCompact`     | `true`       | Show toast after session compaction                                                                  |
-| `showOnBothFail`    | `true`       | If providers attempt and fail, show a fallback toast                                                 |
-| `onlyCurrentModel`  | `false`      | Only show quota for the current model (best-effort)                                                  |
-| `showSessionTokens` | `true`       | Show per-model input/output tokens in toast                                                          |
-| `layout.maxWidth`   | `50`         | Formatting target width                                                                              |
-| `layout.narrowAt`   | `42`         | Compact layout breakpoint                                                                            |
-| `layout.tinyAt`     | `32`         | Ultra-compact layout breakpoint                                                                      |
-| `googleModels`      | `["CLAUDE"]` | Google models: `CLAUDE`, `G3PRO`, `G3FLASH`, `G3IMAGE`                                               |
-| `debug`             | `false`      | Show debug info in toasts (and a debug-only toast when otherwise suppressed)                         |
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `enabled` | `true` | Master switch for the plugin. When `false`, `/quota`, `/quota_status`, and `/tokens_*` are no-ops. |
+| `enableToast` | `true` | Show popup toasts |
+| `toastStyle` | `classic` | Toast layout: `classic` or `grouped` |
+| `enabledProviders` | `"auto"` | Auto-detect providers, or set an explicit provider list |
+| `minIntervalMs` | `300000` | Minimum fetch interval between provider updates |
+| `toastDurationMs` | `9000` | Toast duration in milliseconds |
+| `showOnIdle` | `true` | Show toast on idle trigger |
+| `showOnQuestion` | `true` | Show toast after a question/assistant response |
+| `showOnCompact` | `true` | Show toast after session compaction |
+| `showOnBothFail` | `true` | Show a fallback toast when providers attempt and all fail |
+| `onlyCurrentModel` | `false` | Filter to the current model when possible |
+| `showSessionTokens` | `true` | Append current-session token totals to toast output |
+| `layout.maxWidth` | `50` | Main formatting width target |
+| `layout.narrowAt` | `42` | Compact layout breakpoint |
+| `layout.tinyAt` | `32` | Tiny layout breakpoint |
+| `googleModels` | `["CLAUDE"]` | Google model keys: `CLAUDE`, `G3PRO`, `G3FLASH`, `G3IMAGE` |
+| `debug` | `false` | Include debug context in toast output |
 
-## Contributing
+## Token Pricing Snapshot
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full policy and workflow.
+`/tokens_*` uses a local `models.dev` pricing snapshot.
 
-This project prefers an issue-first contribution model for features, bug fixes, refactors, and behavioral changes. Local pre-commit checks run formatting, typecheck, and tests; PR CI currently runs typecheck and build across Node versions.
+Behavior:
 
-Issue/PR templates are enforced in `.github/ISSUE_TEMPLATE/` and `.github/pull_request_template.md` for consistent titles and required validation details.
+- A bundled snapshot ships with the plugin for offline use.
+- The plugin can refresh the local runtime snapshot when the data is stale.
+- Reports continue to work if refresh fails.
+
+Useful environment variables:
+
+```sh
+OPENCODE_QUOTA_PRICING_AUTO_REFRESH=0
+OPENCODE_QUOTA_PRICING_MAX_AGE_DAYS=5
+```
+
+Maintainer refresh commands:
+
+```sh
+npm run pricing:refresh
+npm run pricing:refresh:if-stale
+npm run build
+```
+
+## Troubleshooting
+
+If something is missing or looks wrong:
+
+1. Run `/quota_status`.
+2. Confirm the expected provider appears in the detected provider list.
+3. If token reports are empty, make sure OpenCode has already created `opencode.db`.
+4. If Copilot managed billing is expected, confirm `copilot-quota-token.json` is present and valid.
+5. If Google or Qwen support is expected, confirm the companion auth plugin is installed.
+
+If `opencode.db` is missing, start OpenCode once and let its local migration complete.
 
 ## Development
 
@@ -314,121 +336,29 @@ Issue/PR templates are enforced in `.github/ISSUE_TEMPLATE/` and `.github/pull_r
 npm install
 npm run typecheck
 npm test
-npm run test:watch
 npm run build
 ```
 
-## Troubleshooting
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for contribution workflow and repository policy.
 
-Toast not appearing? Run `/quota_status` to check config, provider availability, and whether `opencode.db` is detected.
+## LLM Agent Installation Notes
 
-If `opencode.db` is missing, run OpenCode once (OpenCode performs a one-time migration into SQLite on first run after upgrade).
+If you are using an agent to install the plugin for you, the safe default is:
 
----
-
-<details id="llm-agent-installation-instructions">
-<summary><strong>LLM Agent Installation Instructions</strong></summary>
-
-### For LLM Agents: How to Install and Configure
-
-This section provides instructions for LLM agents to install and configure `opencode-quota` based on the user's current OpenCode setup.
-
-#### Step 1: Check Current Configuration
-
-First, determine what providers the user has connected. You can:
-
-1. Read the user's `opencode.json` or `opencode.jsonc` (typically at `~/.config/opencode/`)
-2. Run `/connected` in OpenCode to see active providers
-3. Ask the user which providers they use
-
-#### Step 2: Install the Plugin
-
-Add the plugin to the user's `opencode.json` (or `opencode.jsonc`):
-
-```json
+```jsonc
 {
   "plugin": ["@slkiser/opencode-quota"]
 }
 ```
 
-If the user already has plugins, append to the existing array.
+Then verify with `/quota_status`.
 
-#### Step 3: Configure Providers (Optional)
-
-By default, providers are auto-detected. If the user wants to restrict which providers are queried, add explicit `enabledProviders`:
-
-```jsonc
-{
-  "experimental": {
-    "quotaToast": {
-      "enabledProviders": [
-        // Add only the providers the user has configured:
-        // "copilot"            - if using GitHub Copilot
-        // "openai"             - if using OpenAI/ChatGPT
-        // "qwen-code"          - if using Qwen Code OAuth (requires opencode-qwencode-auth)
-        // "firmware"           - if using Firmware AI
-        // "chutes"             - if using Chutes AI
-        // "google-antigravity" - if using Google Antigravity (requires opencode-antigravity-auth)
-      ],
-    },
-  },
-}
-```
-
-#### Provider Detection Guide
-
-| If user's config has...                     | Add to enabledProviders |
-| ------------------------------------------- | ----------------------- |
-| `github-copilot` provider or Copilot models | `"copilot"`             |
-| `openai` / `chatgpt` provider               | `"openai"`              |
-| `qwen-code` provider                        | `"qwen-code"`           |
-| `firmware` / `firmware-ai` provider         | `"firmware"`            |
-| `chutes` provider                           | `"chutes"`              |
-| `google` provider with antigravity models   | `"google-antigravity"`  |
-| `opencode-antigravity-auth` in plugins      | `"google-antigravity"`  |
-| `opencode-qwencode-auth` in plugins         | `"qwen-code"`           |
-
-#### Example: Full Configuration
-
-For a user with Copilot and Google Antigravity:
-
-```jsonc
-{
-  "plugin": [
-    "opencode-antigravity-auth", // Required for google-antigravity
-    "@slkiser/opencode-quota",
-  ],
-  "experimental": {
-    "quotaToast": {
-      "enabledProviders": ["copilot", "google-antigravity"],
-      "googleModels": ["CLAUDE"], // Options: CLAUDE, G3PRO, G3FLASH
-      "minIntervalMs": 300000, // 5 minutes between fetches
-      "toastDurationMs": 9000, // Toast shows for 9 seconds
-    },
-  },
-}
-```
-
-#### Step 4: Verify Installation
-
-After configuration, instruct the user to:
-
-1. Restart OpenCode (or reload the window)
-2. Run `/quota_status` to verify providers are detected
-3. Run `/quota` to manually trigger a toast
-
-#### Common Issues
-
-- **Toast not showing**: Run `/quota_status` to diagnose
-- **Google Antigravity not working**: Ensure `opencode-antigravity-auth` plugin is installed and accounts are configured
-- **Copilot quota unreliable**: For personal plans, OpenCode auth should work without extra setup; add `copilot-quota-token.json` only if you need a PAT-based override
-- **Copilot organization-managed usage missing**: Add `"organization": "your-org-slug"` to `copilot-quota-token.json` so the plugin uses the organization billing report
-
-</details>
+Only add explicit `enabledProviders` if you want to limit which providers are queried. Only add companion plugins when the user actually uses Google Antigravity or Qwen Code.
 
 ## License
 
 MIT
 
 ## Remarks
-Opencode Quota is not built by the OpenCode team and is not affiliated with them in any way. It is not affiliated with any providers listed above.
+
+Opencode Quota is not built by the OpenCode team and is not affiliated with OpenCode or any provider listed above.

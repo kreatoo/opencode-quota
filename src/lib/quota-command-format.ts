@@ -10,6 +10,7 @@
 import type { QuotaToastError, SessionTokensData } from "./entries.js";
 import { isValueEntry } from "./entries.js";
 import { bar, clampInt, padRight } from "./format-utils.js";
+import { formatGroupedHeader } from "./grouped-header-format.js";
 import type { ToastGroupEntry } from "./toast-format-grouped.js";
 import { renderSessionTokensLines } from "./session-tokens-format.js";
 
@@ -31,13 +32,6 @@ function formatResetsIn(iso?: string): string {
   if (!Number.isFinite(t)) return "";
   const diffSeconds = (t - Date.now()) / 1000;
   return ` (resets in ${formatResetTimeSeconds(diffSeconds)})`;
-}
-
-function normalizeGroupHeader(group: string): string {
-  // Convert "OpenAI (Pro)" -> "[OpenAI] (Pro)" for competitor-like headers.
-  const m = group.match(/^([^()]+?)\s*(\(.*\))\s*$/);
-  if (m) return `[${m[1]!.trim()}] ${m[2]!.trim()}`;
-  return `[${group.trim()}]`;
 }
 
 function looksLikeGoogleModel(label: string): boolean {
@@ -94,7 +88,7 @@ export function formatQuotaCommand(params: {
   lines.push("# Quota (/quota)");
 
   const barWidth = 18;
-  const leftCol = 12;
+  const leftCol = 16;
 
   for (let i = 0; i < groupOrder.length; i++) {
     const g = groupOrder[i]!;
@@ -102,11 +96,12 @@ export function formatQuotaCommand(params: {
 
     if (i > 0) lines.push("");
 
-    lines.push(`→ ${normalizeGroupHeader(g)}`);
+    lines.push(`→ ${formatGroupedHeader(g)}`);
 
     for (const row of list) {
       const label = (row.label ?? row.name).trim();
-      const labelCol = padRight(label, leftCol);
+      const leftText = row.right ? `${label} ${row.right}` : label;
+      const labelCol = padRight(leftText, leftCol);
       const suffix = formatResetsIn(row.resetTimeIso);
 
       if (isValueEntry(row)) {

@@ -8,16 +8,10 @@
 import type { QuotaToastEntry, QuotaToastError, SessionTokensData } from "./entries.js";
 import { isValueEntry } from "./entries.js";
 import { bar, clampInt, formatResetCountdown, padLeft, padRight } from "./format-utils.js";
+import { formatGroupedHeader } from "./grouped-header-format.js";
 import { renderSessionTokensLines } from "./session-tokens-format.js";
 
-export type ToastGroupEntry = QuotaToastEntry & {
-  /** Group id (e.g. "OpenAI (Pro)", "Antigravity (abc..gmail)") */
-  group?: string;
-  /** Row label within group (e.g. "Hourly", "Weekly", "Claude") */
-  label?: string;
-  /** Optional right-side suffix (e.g. "94/250") */
-  right?: string;
-};
+export type ToastGroupEntry = QuotaToastEntry;
 
 function splitGroupName(name: string): { group: string; label: string } {
   // Heuristic: "Label (group)" -> group is label, label is empty.
@@ -78,7 +72,7 @@ export function formatQuotaRowsGrouped(params: {
     if (gi > 0) lines.push("");
 
     // Group header like "→ [OpenAI] (Pro)"
-    lines.push(`→ ${g}`.slice(0, maxWidth));
+    lines.push(`→ ${formatGroupedHeader(g)}`.slice(0, maxWidth));
 
     for (const entry of list) {
       const label = entry.label?.trim() || entry.name;

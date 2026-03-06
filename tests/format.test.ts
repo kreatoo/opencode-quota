@@ -1,8 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { formatQuotaRows } from "../src/lib/format.js";
 
 describe("formatQuotaRows", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("renders a Copilot row", () => {
     const out = formatQuotaRows({
       version: "1.0.0",
@@ -69,5 +73,28 @@ describe("formatQuotaRows", () => {
     });
 
     expect(out).not.toMatch(/\d+[dhms]/);
+  });
+
+  it("normalizes grouped headers in grouped toast output", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-15T12:00:00.000Z"));
+
+    const out = formatQuotaRows({
+      version: "1.0.0",
+      style: "grouped",
+      layout: { maxWidth: 50, narrowAt: 42, tinyAt: 32 },
+      entries: [
+        {
+          name: "Copilot",
+          group: "Copilot (business)",
+          label: "Usage:",
+          kind: "value",
+          value: "9 used | 2026-01 | org=acme-corp",
+          resetTimeIso: "2026-01-16T00:00:00.000Z",
+        },
+      ],
+    });
+
+    expect(out).toContain("→ [Copilot] (business)");
   });
 });

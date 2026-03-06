@@ -5,8 +5,17 @@
  * formatting and toast display stays universal across providers.
  */
 
+export interface GroupedQuotaEntryMeta {
+  /** Optional provider/account group header for grouped toast and /quota output. */
+  group?: string;
+  /** Optional row label inside the group, e.g. "Hourly:" or "Usage:". */
+  label?: string;
+  /** Optional compact right-hand summary, e.g. "42/300". */
+  right?: string;
+}
+
 export type QuotaToastEntry =
-  | {
+  | (GroupedQuotaEntryMeta & {
       /**
        * Percent-based entry (default).
        * Note: kind is optional for backwards compatibility.
@@ -21,8 +30,8 @@ export type QuotaToastEntry =
 
       /** Optional ISO reset timestamp (shown when percentRemaining is < 100). */
       resetTimeIso?: string;
-    }
-  | {
+    })
+  | (GroupedQuotaEntryMeta & {
       /** Value-based entry (no percent bar). */
       kind: "value";
 
@@ -34,7 +43,7 @@ export type QuotaToastEntry =
 
       /** Optional ISO reset timestamp (shown when available). */
       resetTimeIso?: string;
-    };
+    });
 
 export function isValueEntry(
   e: QuotaToastEntry,
